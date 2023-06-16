@@ -11,7 +11,7 @@ class User(Base):
     UsuarioID = Column(Integer, primary_key=True)
     NombreUsuario = Column(String(50), nullable=False)
     CorreoElectronico = Column(String(100), nullable=False)
-    Contrasena = Column(String(25), nullable=False)
+    Contrasena = Column(String(60), nullable=False)
     FechaCreacion = Column(DateTime, default=func.now())
     FechaActualizacion = Column(DateTime)
     Idioma = Column(Enum('Español', 'English'), default='Español')

@@ -1,6 +1,7 @@
 from sqlalchemy.orm import Session, joinedload
 from datetime import datetime
 import models, schemas, security
+from security import get_password_hash
 
 def get_users(db: Session):
     users = db.query(models.User).options(joinedload(models.User.user_roles)).all()
@@ -10,6 +11,7 @@ def get_users(db: Session):
 
 def create_user(db: Session, user: schemas.UserCreate):
     db_user = models.User(**user.dict())
+    db_user.Contrasena = get_password_hash(user.Contrasena)  # Aquí es donde se cambia la contraseña en texto plano por un hash
     db_user.FechaCreacion = datetime.now()
 
     db.add(db_user)
