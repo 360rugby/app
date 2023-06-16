@@ -3,6 +3,7 @@ from pydantic import BaseModel
 from datetime import date
 
 
+
 class UserBase(BaseModel):
     NombreUsuario: str
     CorreoElectronico: str
@@ -33,7 +34,7 @@ class User(UserBase):
     FechaCreacion: Optional[date]
     FechaActualizacion: Optional[date]
     Token: Optional[str] = None
-    roles: List[UserRoleBase] = []  # Asumiendo que un usuario puede tener múltiples roles.
+    roles: List[UserRoleBase] = [{"RolID": 2}]   # Asumiendo que un usuario puede tener múltiples roles.
 
     class Config:
         orm_mode = True

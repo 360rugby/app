@@ -1,6 +1,25 @@
 from sqlalchemy.orm import Session
 from datetime import datetime
-from . import models, schemas, security
+import models, schemas, security
+
+def get_users(db: Session):
+    return db.query(models.User).all()
+
+
+def create_user(db: Session, user: schemas.UserCreate):
+    db_user = models.User(**user.dict())
+    db_user.FechaCreacion = datetime.now()  # asignar la fecha de creación antes de guardar
+
+    db.add(db_user)
+    db.commit()
+    db.refresh(db_user)
+
+    # Añadir los roles al usuario
+    user_role = models.UserRoles(UsuarioID=db_user.UsuarioID, RolID=2)  # RolID 2 es el de usuario
+    db.add(user_role)
+    db.commit()
+
+    return db_user
 
 def get_user(db: Session, username: str):
     return db.query(models.User).filter(models.User.NombreUsuario == username).first()
@@ -15,14 +34,6 @@ def authenticate_user(db: Session, username: str, password: str):
 
 def get_user_by_id(db: Session, user_id: int):
     return db.query(models.User).filter(models.User.UsuarioID == user_id).first()
-
-def create_user(db: Session, user: schemas.UserCreate):
-    db_user = models.User(**user.dict())
-    db_user.FechaCreacion = datetime.now() # asignar la fecha de creación antes de guardar
-    db.add(db_user)
-    db.commit()
-    db.refresh(db_user)
-    return db_user
 
 def update_user(db: Session, user: schemas.UserUpdate):
     db_user = get_user_by_id(db, user.UsuarioID)
