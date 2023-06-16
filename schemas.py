@@ -2,12 +2,13 @@ from typing import Optional, List
 from pydantic import BaseModel
 from datetime import date
 
+
 class UserBase(BaseModel):
     NombreUsuario: str
     CorreoElectronico: str
     Idioma: Optional[str] = "en"
     ZonaHoraria: Optional[str] = "UTC"
-
+    
 
 class UserCreate(UserBase):
     Contrasena: str
@@ -31,7 +32,7 @@ class User(UserBase):
     UsuarioID: int
     FechaCreacion: Optional[date]
     FechaActualizacion: Optional[date]
-    RecoveryToken: Optional[str] = None
+    Token: Optional[str] = None
     roles: List[UserRoleBase] = []  # Asumiendo que un usuario puede tener múltiples roles.
 
     class Config:
