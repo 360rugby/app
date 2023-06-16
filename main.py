@@ -5,7 +5,7 @@ import schemas, crud  # Importa tus esquemas y funciones de crud
 from typing import List
 
 app = FastAPI()
-
+#enpont para mostar todos los usarios de la base de datos de la tabla usaurios
 @app.get("/test_db", response_model=List[schemas.User])
 def test_db(db: Session = Depends(get_db)):
     try:
@@ -13,8 +13,7 @@ def test_db(db: Session = Depends(get_db)):
         return users
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/users", response_model=List[schemas.User])
-def read_users(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
-    users = crud.get_users(db=db)
-    return users
+#endponit para crear uarios que seran todo por defecto de rol user
+@app.post("/users", response_model=schemas.User)
+def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
+    return crud.create_user(db=db, user=user)
