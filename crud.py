@@ -60,3 +60,7 @@ def verify_password(plain_password, hashed_password):
 
 def get_password_hash(password):
     return security.get_password_hash(password)
+
+# Nueva función para obtener un usuario por su token
+def get_user_by_token(db: Session, token: str):
+    return db.query(models.User).filter(models.User.Token == token).first()

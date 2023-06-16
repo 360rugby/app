@@ -46,3 +46,8 @@ def verify_refresh_token(refresh_token: str, db: Session):
     if not user:
         raise Exception("Invalid refresh token")
     return user.NombreUsuario
+
+# Crear token de refresco
+def create_refresh_token(username: str) -> str:
+    refresh_token = jwt.encode({"sub": username}, SECRET_KEY, algorithm=ALGORITHM)
+    return refresh_token
