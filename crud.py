@@ -1,21 +1,22 @@
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from datetime import datetime
 import models, schemas, security
 
 def get_users(db: Session):
-    return db.query(models.User).all()
-
+    users = db.query(models.User).options(joinedload(models.User.user_roles)).all()
+    for user in users:
+        user.user_roles_names = [role.to_dict()["NombreRol"] for role in user.user_roles]  
+    return [user.to_dict() for user in users]
 
 def create_user(db: Session, user: schemas.UserCreate):
     db_user = models.User(**user.dict())
-    db_user.FechaCreacion = datetime.now()  # asignar la fecha de creación antes de guardar
+    db_user.FechaCreacion = datetime.now()
 
     db.add(db_user)
     db.commit()
     db.refresh(db_user)
 
-    # Añadir los roles al usuario
-    user_role = models.UserRoles(UsuarioID=db_user.UsuarioID, RolID=2)  # RolID 2 es el de usuario
+    user_role = models.UserRoles(UsuarioID=db_user.UsuarioID, RolID=2)
     db.add(user_role)
     db.commit()
 
