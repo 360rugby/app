@@ -32,6 +32,7 @@ def test_db(role: List[str] = Depends(admin_or_user_role_required), db: Session 
         return users
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    
 #endponit que sirve para crear usuarios con el rol por defecto de User
 @app.post("/users", response_model=schemas.User)
 def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
@@ -48,7 +49,8 @@ def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db:
         )
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     user_roles = [role.to_dict()["NombreRol"] for role in user.user_roles]
+    data = {"sub": user.NombreUsuario, "user_id": user.UsuarioID}
     access_token = create_access_token(
-        data={"sub": user.NombreUsuario}, expires_delta=access_token_expires, user_roles=user_roles
+        data=data, expires_delta=access_token_expires, user_roles=user_roles
     )
     return {"access_token": access_token, "token_type": "bearer"}
