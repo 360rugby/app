@@ -4,6 +4,7 @@ from passlib.context import CryptContext
 from sqlalchemy.orm import Session
 import models
 import secrets
+from typing import List
 
 # Configurar el contexto de Passlib
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -21,8 +22,10 @@ def get_password_hash(password: str) -> str:
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)
 
-def create_access_token(data: dict, expires_delta: timedelta = None) -> str:
+def create_access_token(data: dict, expires_delta: timedelta = None, user_roles: List[str] = None) -> str:
     to_encode = data.copy()
+    if user_roles:
+        to_encode.update({"roles": user_roles})
     if expires_delta:
         expire = datetime.utcnow() + expires_delta
     else:
@@ -30,6 +33,7 @@ def create_access_token(data: dict, expires_delta: timedelta = None) -> str:
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
+
 
 # Asumiendo que tienes un modelo RevokedTokens
 def revoke_token(token: str, db: Session):
