@@ -18,6 +18,8 @@ class User(Base):
     ZonaHoraria = Column(String(8), default='GMT+1')
     Token = Column(String(50))
     PuntosLealtad = Column(Integer, default=0)
+    RefreshToken = Column(String(255))
+    RefreshTokenExpiry = Column(DateTime)
 
     user_roles = relationship("UserRoles", back_populates="user")
     user_roles_names = []  # Nuevo campo
@@ -33,6 +35,8 @@ class User(Base):
             "Idioma": self.Idioma,
             "ZonaHoraria": self.ZonaHoraria,
             "Token": self.Token,
+            "RefreshToken":self.RefreshToken,
+            "RefreshTokenExpiry":self.RefreshTokenExpiry,
             "PuntosLealtad": self.PuntosLealtad,
             "user_roles": [role.to_dict() for role in self.user_roles],
             "user_roles_names": self.user_roles_names  # Incluimos el nuevo campo aquí

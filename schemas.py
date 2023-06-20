@@ -45,8 +45,12 @@ class Role(RoleBase):
 
 class Token(BaseModel):
     access_token: str
+    refresh_token: str  # Nuevo campo
     token_type: str
 
 class TokenData(BaseModel):
     username: Optional[str] = None
     user_id: Optional[int] = None
+
+class RefreshToken(BaseModel):
+    refresh_token: str

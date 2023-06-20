@@ -4,13 +4,13 @@ from sqlalchemy.orm import Session
 from jose import JWTError, jwt
 from security import ALGORITHM, SECRET_KEY
 from database import get_db
-from crud import get_user_by_token
+import crud
 from fastapi.security import OAuth2PasswordBearer
 from schemas import TokenData
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token", auto_error=False)
 
-async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
+def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
@@ -26,7 +26,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = De
         token_data = TokenData(user_id=user_id)
     except JWTError:
         raise credentials_exception
-    user = get_user_by_token(db, token_data.user_id)
+    user = crud.get_user_by_id(db, user_id)  # Se ha cambiado get_user_by_token por get_user_by_id
     if user is None:
         raise credentials_exception
     return user

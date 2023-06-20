@@ -66,3 +66,12 @@ def get_password_hash(password):
 # Nueva función para obtener un usuario por su token
 def get_user_by_token(db: Session, token: str):
     return db.query(models.User).filter(models.User.Token == token).first()
+
+def get_user_by_refresh_token(db: Session, refresh_token: str):
+    return db.query(models.User).filter(models.User.RefreshToken == refresh_token).first()
+
+# La función get_user_by_token se ha renombrado a get_user_by_id y su implementación ha sido modificada.
+def get_user_by_id(db: Session, user_id: int):
+    return db.query(models.User).filter(models.User.UsuarioID == user_id).first()
+
+

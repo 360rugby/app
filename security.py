@@ -1,5 +1,8 @@
 from datetime import datetime, timedelta
-from jose import jwt
+from pstats import Stats
+import statistics
+from fastapi import HTTPException
+from jose import JWTError, jwt
 from passlib.context import CryptContext
 from sqlalchemy.orm import Session
 import models
@@ -42,14 +45,31 @@ def revoke_token(token: str, db: Session):
 def is_token_revoked(token: str, db: Session):
     return db.query(models.RevokedTokens).filter(models.RevokedTokens.token == token).first() is not None
 
-# Verificar tokens de refresco
-def verify_refresh_token(refresh_token: str, db: Session):
-    user = db.query(models.User).filter(models.User.Token == refresh_token).first()
-    if not user:
-        raise Exception("Invalid refresh token")
-    return user.NombreUsuario
 
-# Crear token de refresco
-def create_refresh_token(username: str) -> str:
-    refresh_token = jwt.encode({"sub": username}, SECRET_KEY, algorithm=ALGORITHM)
-    return refresh_token
+def create_refresh_token(data: dict, expires_delta: timedelta = None) -> str:
+    to_encode = data.copy()
+    if expires_delta:
+        expire = datetime.utcnow() + expires_delta
+    else:
+        expire = datetime.utcnow() + timedelta(days=7)  # El tiempo de expiración por defecto es de 7 días
+    to_encode.update({"exp": expire})
+    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return encoded_jwt
+
+def verify_refresh_token(refresh_token: str, db: Session):
+    try:
+        payload = jwt.decode(refresh_token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id: int = payload.get("user_id")
+        if user_id is None:
+            raise HTTPException(
+                status_code=Stats.HTTP_401_UNAUTHORIZED,
+                detail="Invalid refresh token",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        return user_id
+    except JWTError:
+        raise HTTPException(
+            status_code=statistics.HTTP_401_UNAUTHORIZED,
+            detail="Invalid refresh token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
