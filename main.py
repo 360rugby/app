@@ -68,7 +68,10 @@ def test_db(current_user: schemas.User = Depends(get_current_user), db: Session 
 #endponit que sirve para crear usuarios con el rol por defecto de User
 @app.post("/users", response_model=schemas.User)
 def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
-    return crud.create_user(db=db, user=user)
+    user = crud.create_user(db=db, user=user)
+    user_roles = [role.to_dict()["NombreRol"] for role in user.user_roles]
+    user.user_roles_names = user_roles
+    return user
 #endpoint que sirve para iniciar sesion con el username y el password y devuelve el token de acceso
 @app.post("/token", response_model=schemas.Token)
 def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
