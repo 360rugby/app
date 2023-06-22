@@ -47,6 +47,7 @@ class Token(BaseModel):
     access_token: str
     refresh_token: str  # Nuevo campo
     token_type: str
+    roles: List[str] = []  # Nuevo campo
 
 class TokenData(BaseModel):
     username: Optional[str] = None

@@ -15,10 +15,27 @@ from datetime import timedelta
 from security import ACCESS_TOKEN_EXPIRE_MINUTES, create_access_token
 from dependencies import get_current_role, admin_role_required, user_role_required, admin_or_user_role_required  # new import line
 from schemas import Password
+from fastapi.middleware.cors import CORSMiddleware
+
 
 
 
 app = FastAPI()
+
+
+# Replace 'your-app-domain.com' with the domain of your Flutter web application,
+# or use '*' to allow all origins (not recommended in production)
+origins = [
+    'http://localhost:54165',  # This seems to be your Flutter web app's origin
+    '*',  
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+)
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/token")
 #funcion que devuelve el rol del usuario atraves del token
@@ -80,7 +97,7 @@ def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db:
     user.RefreshTokenExpiry = datetime.utcnow() + refresh_token_expires
     db.commit()
 
-    return {"access_token": access_token, "refresh_token": refresh_token, "token_type": "bearer"}
+    return {"access_token": access_token, "refresh_token": refresh_token, "token_type": "bearer", "roles": user_roles} 
 
 @app.post("/refresh_token", response_model=schemas.Token)
 def refresh_token(token: schemas.RefreshToken, db: Session = Depends(get_db)):
