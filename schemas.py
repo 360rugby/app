@@ -32,6 +32,8 @@ class User(UserBase):
     PuntosLealtad: Optional[int] = 0
     #user_roles: List[UserRoleBase]  # Cambiamos esto a UserRoleBase
     user_roles_names: List[str]  # Nuevo campo
+    access_token: Optional[str] = None  # New field
+    refresh_token: Optional[str] = None  # New field
 
     class Config:
         orm_mode = True

@@ -65,14 +65,35 @@ def test_db(current_user: schemas.User = Depends(get_current_user), db: Session 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
  
-#endponit que sirve para crear usuarios con el rol por defecto de User
+#endponit que sirve para crear usuarios con el rol por defecto de User y devuelve datos de la tabla usuario y el token y el token de refresco
 @app.post("/users", response_model=schemas.User)
 def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
-    user = crud.create_user(db=db, user=user)
-    user_roles = [role.to_dict()["NombreRol"] for role in user.user_roles]
-    user.user_roles_names = user_roles
-    return user
-#endpoint que sirve para iniciar sesion con el username y el password y devuelve el token de acceso
+    db_user = crud.create_user(db=db, user=user)
+    user_roles = [role.to_dict()["NombreRol"] for role in db_user.user_roles]
+
+    # Create tokens
+    data = {"sub": db_user.NombreUsuario, "user_id": db_user.UsuarioID}
+    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data=data, expires_delta=access_token_expires, user_roles=user_roles
+    )
+    refresh_token_expires = timedelta(days=7)  # Set this to whatever you want
+    refresh_token = create_access_token(
+        data=data, expires_delta=refresh_token_expires, user_roles=user_roles
+    )
+    
+    # Store refresh token in user model
+    db_user.RefreshToken = refresh_token
+    db_user.RefreshTokenExpiry = datetime.utcnow() + refresh_token_expires
+    db.commit()
+    
+    db_user = db_user.to_dict()
+    db_user["user_roles_names"] = user_roles
+    db_user["access_token"] = access_token
+    db_user["refresh_token"] = refresh_token
+    return db_user
+
+#endpoint que sirve para iniciar sesion con el username y el password y devuelve el token de acceso y el de refresco y el rol del usuario
 @app.post("/token", response_model=schemas.Token)
 def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
     user = crud.authenticate_user(db, form_data.username, form_data.password)
@@ -102,6 +123,7 @@ def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db:
 
     return {"access_token": access_token, "refresh_token": refresh_token, "token_type": "bearer", "roles": user_roles} 
 
+#endpoint que sirve para renovar el token atraves del token de refresco y devuelve un nuevo token y el token de refresco
 @app.post("/refresh_token", response_model=schemas.Token)
 def refresh_token(token: schemas.RefreshToken, db: Session = Depends(get_db)):
     refresh_token = token.refresh_token
@@ -132,6 +154,16 @@ def refresh_token(token: schemas.RefreshToken, db: Session = Depends(get_db)):
 
     return {"access_token": access_token, "refresh_token": new_refresh_token, "token_type": "bearer"}
 
+# Endpoint que devuelve los datos del usuario autenticado
+@app.get("/user/me", response_model=schemas.User)
+def read_users_me(current_user: schemas.User = Depends(get_current_user)):
+    """
+    Get current user.
+    """
+    return current_user
+
+
+#endpoint que sirve para cambiar la contrseña introduciendo la contraseña antigua
 @app.post("/change_password")
 def change_password(
     password: Password, 
@@ -146,7 +178,7 @@ def change_password(
         return {"message": "Password changed successfully"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
+#endpoint para cerrar sesion y desloguearse
 @app.post("/logout")
 def logout(current_user: schemas.User = Depends(get_current_user)):
     """

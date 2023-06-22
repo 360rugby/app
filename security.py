@@ -73,3 +73,13 @@ def verify_refresh_token(refresh_token: str, db: Session):
             detail="Invalid refresh token",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+def create_password_recovery_token(data: dict, expires_delta: timedelta = None) -> str:
+    to_encode = data.copy()
+    if expires_delta:
+        expire = datetime.utcnow() + expires_delta
+    else:
+        expire = datetime.utcnow() + timedelta(days=1)  # 1 day to expire
+    to_encode.update({"exp": expire})
+    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return encoded_jwt
