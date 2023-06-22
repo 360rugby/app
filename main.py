@@ -14,6 +14,9 @@ from fastapi.security import OAuth2PasswordRequestForm
 from datetime import timedelta
 from security import ACCESS_TOKEN_EXPIRE_MINUTES, create_access_token
 from dependencies import get_current_role, admin_role_required, user_role_required, admin_or_user_role_required  # new import line
+from schemas import Password
+
+
 
 app = FastAPI()
 
@@ -109,6 +112,20 @@ def refresh_token(token: schemas.RefreshToken, db: Session = Depends(get_db)):
 
     return {"access_token": access_token, "refresh_token": new_refresh_token, "token_type": "bearer"}
 
+@app.post("/change_password")
+def change_password(
+    password: Password, 
+    current_user: schemas.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    if not crud.verify_password(password.old_password, current_user.Contrasena):
+        raise HTTPException(status_code=400, detail="Incorrect old password")
+
+    try:
+        crud.change_password(db=db, user=current_user, new_password=password.new_password)
+        return {"message": "Password changed successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/logout")
 def logout(current_user: schemas.User = Depends(get_current_user)):

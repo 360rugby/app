@@ -54,3 +54,7 @@ class TokenData(BaseModel):
 
 class RefreshToken(BaseModel):
     refresh_token: str
+
+class Password(BaseModel):
+    old_password: str
+    new_password: str

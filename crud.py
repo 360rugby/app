@@ -74,4 +74,9 @@ def get_user_by_refresh_token(db: Session, refresh_token: str):
 def get_user_by_id(db: Session, user_id: int):
     return db.query(models.User).filter(models.User.UsuarioID == user_id).first()
 
+def change_password(db: Session, user: models.User, new_password: str):
+    user.Contrasena = get_password_hash(new_password)
+    db.commit()
+    return user
+
 
