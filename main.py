@@ -109,3 +109,12 @@ def refresh_token(token: schemas.RefreshToken, db: Session = Depends(get_db)):
 
     return {"access_token": access_token, "refresh_token": new_refresh_token, "token_type": "bearer"}
 
+
+@app.post("/logout")
+def logout(current_user: schemas.User = Depends(get_current_user)):
+    """
+    This endpoint is used to logout user, even though it doesn't invalidate the token,
+    it gives a chance to user interfaces to trigger this endpoint when user wants to logout,
+    then UI can delete the token from the local storage.
+    """
+    return {"detail": "Successfully logged out"}
