@@ -38,16 +38,7 @@ app.add_middleware(
 )
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/token")
-#funcion que devuelve el rol del usuario atraves del token
-def get_current_role(token: str = Depends(oauth2_scheme)):
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        roles: List[str] = payload.get("roles")
-        if roles is None:
-            raise HTTPException(status_code=400, detail="Invalid token")
-        return roles
-    except JWTError:
-        raise HTTPException(status_code=400, detail="Invalid token")
+
 #endpoint que muestra todos los usuarios de la tabla usuario y la relacion que hay con la tabla de rolesusuarios y usuariosroles
 @app.get("/test_db", response_model=List[schemas.User])
 def test_db(role: List[str] = Depends(admin_or_user_role_required), db: Session = Depends(get_db)):
@@ -68,6 +59,14 @@ def test_db(current_user: schemas.User = Depends(get_current_user), db: Session 
 #endponit que sirve para crear usuarios con el rol por defecto de User y devuelve datos de la tabla usuario y el token y el token de refresco
 @app.post("/users", response_model=schemas.User)
 def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
+    # Check if user or email already exists
+    db_user_by_name = crud.get_user_by_username(db, user.NombreUsuario)
+    db_user_by_email = crud.get_user_by_email(db, user.CorreoElectronico)
+    if db_user_by_name or db_user_by_email:
+        raise HTTPException(
+            status_code=400, detail="Username or email already registered"
+        )
+
     db_user = crud.create_user(db=db, user=user)
     user_roles = [role.to_dict()["NombreRol"] for role in db_user.user_roles]
 
@@ -92,6 +91,7 @@ def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
     db_user["access_token"] = access_token
     db_user["refresh_token"] = refresh_token
     return db_user
+
 
 #endpoint que sirve para iniciar sesion con el username y el password y devuelve el token de acceso y el de refresco y el rol del usuario
 @app.post("/token", response_model=schemas.Token)
@@ -152,16 +152,15 @@ def refresh_token(token: schemas.RefreshToken, db: Session = Depends(get_db)):
     user.RefreshTokenExpiry = datetime.utcnow() + refresh_token_expires
     db.commit()
 
-    return {"access_token": access_token, "refresh_token": new_refresh_token, "token_type": "bearer"}
+    return {
+        "access_token": access_token, 
+        "refresh_token": new_refresh_token, 
+        "token_type": "bearer", 
+        "roles": user_roles
+    }
+
 
 # Endpoint que devuelve los datos del usuario autenticado
-@app.get("/user/me", response_model=schemas.User)
-def read_users_me(current_user: schemas.User = Depends(get_current_user)):
-    """
-    Get current user.
-    """
-    return current_user
-
 
 #endpoint que sirve para cambiar la contrseña introduciendo la contraseña antigua
 @app.post("/change_password")

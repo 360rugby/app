@@ -11,8 +11,6 @@ class UserBase(BaseModel):
 class UserCreate(UserBase):
     Contrasena: str
 
-class UserUpdate(UserBase):
-    Contrasena: Optional[str] = None
 
 class UserRoleBase(BaseModel):
     UsuariosRolesID: int
@@ -30,7 +28,7 @@ class User(UserBase):
     FechaActualizacion: Optional[date]
     Token: Optional[str] = None
     PuntosLealtad: Optional[int] = 0
-    #user_roles: List[UserRoleBase]  # Cambiamos esto a UserRoleBase
+    user_roles: List[UserRoleBase]  # Cambiamos esto a UserRoleBase
     user_roles_names: List[str]  # Nuevo campo
     access_token: Optional[str] = None  # New field
     refresh_token: Optional[str] = None  # New field

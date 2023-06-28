@@ -36,14 +36,6 @@ def create_access_token(data: dict, expires_delta: timedelta = None, user_roles:
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
-# Asumiendo que tienes un modelo RevokedTokens
-def revoke_token(token: str, db: Session):
-    revoked_token = models.RevokedTokens(token=token)
-    db.add(revoked_token)
-    db.commit()
-
-def is_token_revoked(token: str, db: Session):
-    return db.query(models.RevokedTokens).filter(models.RevokedTokens.token == token).first() is not None
 
 
 def create_refresh_token(data: dict, expires_delta: timedelta = None) -> str:
@@ -74,12 +66,4 @@ def verify_refresh_token(refresh_token: str, db: Session):
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-def create_password_recovery_token(data: dict, expires_delta: timedelta = None) -> str:
-    to_encode = data.copy()
-    if expires_delta:
-        expire = datetime.utcnow() + expires_delta
-    else:
-        expire = datetime.utcnow() + timedelta(days=1)  # 1 day to expire
-    to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-    return encoded_jwt
+

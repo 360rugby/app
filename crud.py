@@ -35,28 +35,6 @@ def authenticate_user(db: Session, username: str, password: str):
         return False
     return user
 
-def get_user_by_id(db: Session, user_id: int):
-    return db.query(models.User).filter(models.User.UsuarioID == user_id).first()
-
-def update_user(db: Session, user: schemas.UserUpdate):
-    db_user = get_user_by_id(db, user.UsuarioID)
-    if db_user is None:
-        return None
-    for var, value in vars(user).items():
-        if var == "Contrasena":
-            value = security.get_password_hash(value)
-        setattr(db_user, var, value) if value else None
-    db.add(db_user)
-    db.commit()
-    db.refresh(db_user)
-    return db_user
-
-def delete_user(db: Session, user_id: int):
-    user = get_user_by_id(db, user_id)
-    db.delete(user)
-    db.commit()
-    return user
-
 def verify_password(plain_password, hashed_password):
     return security.verify_password(plain_password, hashed_password)
 
@@ -78,5 +56,12 @@ def change_password(db: Session, user: models.User, new_password: str):
     user.Contrasena = get_password_hash(new_password)
     db.commit()
     return user
+
+def get_user_by_username(db: Session, username: str):
+    return db.query(models.User).filter(models.User.NombreUsuario == username).first()
+
+def get_user_by_email(db: Session, email: str):
+    return db.query(models.User).filter(models.User.CorreoElectronico == email).first()
+
 
 

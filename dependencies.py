@@ -31,6 +31,7 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
         raise credentials_exception
     return user
 
+
 def get_current_role(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
     if not token:
         raise HTTPException(status_code=401, detail="Unauthorized")
