@@ -1,6 +1,7 @@
 from typing import Optional, List, Dict
-from pydantic import BaseModel
+from pydantic import BaseModel, constr
 from datetime import date
+import re
 
 class UserBase(BaseModel):
     NombreUsuario: str
@@ -11,8 +12,7 @@ class UserBase(BaseModel):
 class UserCreate(UserBase):
     Contrasena: str
     ConfirmarContrasena: str
-
-
+    Movil: Optional[constr(regex="^[0-9]{9}$")] = None  # Sólo se permiten 9 dígitos
 
 class UserRoleBase(BaseModel):
     UsuariosRolesID: int
@@ -28,7 +28,7 @@ class User(UserBase):
     UsuarioID: int
     FechaCreacion: Optional[date]
     FechaActualizacion: Optional[date]
-    Token: Optional[str] = None
+    Movil: Optional[str] = None
     PuntosLealtad: Optional[int] = 0
     user_roles: List[UserRoleBase]  # Cambiamos esto a UserRoleBase
     user_roles_names: List[str]  # Nuevo campo
@@ -70,7 +70,7 @@ class UserResponse(BaseModel):
     ZonaHoraria: Optional[str] = "GMT+1"
     FechaCreacion: Optional[date]
     FechaActualizacion: Optional[date]
-    Token: Optional[str] = None
+    Movil: Optional[str] = None
     PuntosLealtad: Optional[int] = 0
     user_roles: List[Dict]  # Esperamos una lista de diccionarios aquí
  

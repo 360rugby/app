@@ -16,7 +16,7 @@ class User(Base):
     FechaActualizacion = Column(DateTime)
     Idioma = Column(Enum('Español', 'English'), default='Español')
     ZonaHoraria = Column(String(8), default='GMT+1')
-    Token = Column(String(50))
+    Movil = Column(String(50))
     PuntosLealtad = Column(Integer, default=0)
     RefreshToken = Column(String(255))
     RefreshTokenExpiry = Column(DateTime)
@@ -34,7 +34,7 @@ class User(Base):
             "FechaActualizacion": self.FechaActualizacion,
             "Idioma": self.Idioma,
             "ZonaHoraria": self.ZonaHoraria,
-            "Token": self.Token,
+            "Movil": self.Movil,
             "RefreshToken":self.RefreshToken,
             "RefreshTokenExpiry":self.RefreshTokenExpiry,
             "PuntosLealtad": self.PuntosLealtad,

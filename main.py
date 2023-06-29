@@ -81,11 +81,7 @@ def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
     refresh_token = create_refresh_token(
         data=data, expires_delta=refresh_token_expires
     )
-    
-    db_user.RefreshToken = refresh_token
-    db_user.RefreshTokenExpiry = datetime.utcnow() + refresh_token_expires
-    db.commit()
-    
+
     db_user = db_user.to_dict()
     db_user["user_roles_names"] = user_roles
     db_user["access_token"] = access_token
@@ -114,10 +110,6 @@ def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db:
     refresh_token = create_refresh_token(
         data=data, expires_delta=refresh_token_expires
     )
-    
-    user.RefreshToken = refresh_token
-    user.RefreshTokenExpiry = datetime.utcnow() + refresh_token_expires
-    db.commit()
 
     return {
         "access_token": access_token, 
@@ -151,17 +143,12 @@ def refresh_token(token: schemas.RefreshToken, db: Session = Depends(get_db)):
         data=data, expires_delta=refresh_token_expires
     )
 
-    user.RefreshToken = new_refresh_token
-    user.RefreshTokenExpiry = datetime.utcnow() + refresh_token_expires
-    db.commit()
-
     return {
         "access_token": access_token, 
         "refresh_token": new_refresh_token, 
         "token_type": "bearer", 
         "roles": user_roles
     }
-
 
 # Endpoint que devuelve los datos del usuario autenticado
 @app.get("/me", response_model=schemas.UserResponse)
@@ -176,7 +163,7 @@ async def read_users_me(current_user: schemas.User = Depends(get_current_user)):
             ZonaHoraria = current_user.ZonaHoraria,
             FechaCreacion = current_user.FechaCreacion,
             FechaActualizacion = current_user.FechaActualizacion,
-            Token = current_user.Token,
+            Movil = current_user.Movil,
             PuntosLealtad = current_user.PuntosLealtad,
             user_roles = user_roles_dict,  # Usamos la lista de diccionarios de roles que acabamos de crear
             user_roles_names = current_user.user_roles_names

@@ -25,6 +25,8 @@ def create_user(db: Session, user: schemas.UserCreate):
 
     db_user = models.User(**user.dict(exclude={"ConfirmarContrasena"}))  # No queremos guardar ConfirmarContrasena
     db_user.Contrasena = get_password_hash(user.Contrasena)  # Aquí es donde se cambia la contraseña en texto plano por un hash
+    if user.Movil:  # Sólo añadir prefijo si el usuario proporcionó un número de móvil
+        db_user.Movil = "+34" + user.Movil
     db_user.FechaCreacion = datetime.now()
 
     db.add(db_user)
@@ -36,6 +38,7 @@ def create_user(db: Session, user: schemas.UserCreate):
     db.commit()
 
     return db_user
+
 
 def get_user(db: Session, username: str):
     return db.query(models.User).filter(models.User.NombreUsuario == username).first()
@@ -53,13 +56,6 @@ def verify_password(plain_password, hashed_password):
 
 def get_password_hash(password):
     return security.get_password_hash(password)
-
-# Nueva función para obtener un usuario por su token
-def get_user_by_token(db: Session, token: str):
-    return db.query(models.User).filter(models.User.Token == token).first()
-
-def get_user_by_refresh_token(db: Session, refresh_token: str):
-    return db.query(models.User).filter(models.User.RefreshToken == refresh_token).first()
 
 # La función get_user_by_token se ha renombrado a get_user_by_id y su implementación ha sido modificada.
 def get_user_by_id(db: Session, user_id: int):
