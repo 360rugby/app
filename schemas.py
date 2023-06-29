@@ -10,6 +10,8 @@ class UserBase(BaseModel):
 
 class UserCreate(UserBase):
     Contrasena: str
+    ConfirmarContrasena: str
+
 
 
 class UserRoleBase(BaseModel):

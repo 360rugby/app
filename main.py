@@ -56,6 +56,11 @@ def test_db(current_user: schemas.User = Depends(get_current_user), db: Session 
 #endponit que sirve para crear usuarios con el rol por defecto de User y devuelve datos de la tabla usuario y el token y el token de refresco
 @app.post("/users", response_model=schemas.User)
 def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
+    if user.Contrasena != user.ConfirmarContrasena:
+        raise HTTPException(
+            status_code=400, detail="Passwords do not match"
+        )
+
     db_user_by_name = crud.get_user_by_username(db, user.NombreUsuario)
     db_user_by_email = crud.get_user_by_email(db, user.CorreoElectronico)
     if db_user_by_name or db_user_by_email:
@@ -86,6 +91,7 @@ def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
     db_user["access_token"] = access_token
     db_user["refresh_token"] = refresh_token
     return db_user
+
 
 @app.post("/token", response_model=schemas.Token)
 def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):

@@ -1,3 +1,4 @@
+from fastapi import HTTPException
 from sqlalchemy.orm import Session, joinedload
 from datetime import datetime
 import models, schemas, security
@@ -10,7 +11,19 @@ def get_users(db: Session):
     return [user.to_dict() for user in users]
 
 def create_user(db: Session, user: schemas.UserCreate):
-    db_user = models.User(**user.dict())
+    if user.Contrasena != user.ConfirmarContrasena:
+        raise HTTPException(
+            status_code=400, detail="Passwords do not match"
+        )
+
+    db_user_by_name = get_user_by_username(db, user.NombreUsuario)
+    db_user_by_email = get_user_by_email(db, user.CorreoElectronico)
+    if db_user_by_name or db_user_by_email:
+        raise HTTPException(
+            status_code=400, detail="Username or email already registered"
+        )
+
+    db_user = models.User(**user.dict(exclude={"ConfirmarContrasena"}))  # No queremos guardar ConfirmarContrasena
     db_user.Contrasena = get_password_hash(user.Contrasena)  # Aquí es donde se cambia la contraseña en texto plano por un hash
     db_user.FechaCreacion = datetime.now()
 
