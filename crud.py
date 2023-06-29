@@ -72,5 +72,7 @@ def get_user_by_username(db: Session, username: str):
 def get_user_by_email(db: Session, email: str):
     return db.query(models.User).filter(models.User.CorreoElectronico == email).first()
 
+def get_user_by_mobile(db: Session, mobile: str):
+    return db.query(models.User).filter(models.User.Movil == mobile).first()
 
 

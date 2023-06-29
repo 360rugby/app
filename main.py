@@ -63,9 +63,10 @@ def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
 
     db_user_by_name = crud.get_user_by_username(db, user.NombreUsuario)
     db_user_by_email = crud.get_user_by_email(db, user.CorreoElectronico)
-    if db_user_by_name or db_user_by_email:
+    db_user_by_mobile = crud.get_user_by_mobile(db, "+34" + user.Movil) if user.Movil else None
+    if db_user_by_name or db_user_by_email or db_user_by_mobile:
         raise HTTPException(
-            status_code=400, detail="Username or email already registered"
+            status_code=400, detail="Username, email or mobile already registered"
         )
 
     db_user = crud.create_user(db=db, user=user)
