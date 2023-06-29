@@ -41,7 +41,7 @@ def get_user(db: Session, username: str):
     return db.query(models.User).filter(models.User.NombreUsuario == username).first()
 
 def authenticate_user(db: Session, username: str, password: str):
-    user = get_user(db, username)
+    user = get_user(db, username) or get_user_by_email(db, username) 
     if not user:
         return False
     if not security.verify_password(password, user.Contrasena):
