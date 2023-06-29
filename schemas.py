@@ -1,4 +1,4 @@
-from typing import Optional, List
+from typing import Optional, List, Dict
 from pydantic import BaseModel
 from datetime import date
 
@@ -59,3 +59,19 @@ class RefreshToken(BaseModel):
 class Password(BaseModel):
     old_password: str
     new_password: str
+
+class UserResponse(BaseModel):
+    UsuarioID: int
+    NombreUsuario: str
+    CorreoElectronico: str
+    Idioma: Optional[str] = "Español"
+    ZonaHoraria: Optional[str] = "GMT+1"
+    FechaCreacion: Optional[date]
+    FechaActualizacion: Optional[date]
+    Token: Optional[str] = None
+    PuntosLealtad: Optional[int] = 0
+    user_roles: List[Dict]  # Esperamos una lista de diccionarios aquí
+ 
+
+    class Config:
+        orm_mode = True

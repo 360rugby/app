@@ -12,16 +12,13 @@ import schemas, crud
 from typing import List
 from fastapi.security import OAuth2PasswordRequestForm
 from datetime import timedelta
-from security import ACCESS_TOKEN_EXPIRE_MINUTES, create_access_token
+from security import ACCESS_TOKEN_EXPIRE_MINUTES, create_access_token, create_refresh_token, verify_refresh_token
 from dependencies import get_current_role, admin_role_required, user_role_required, admin_or_user_role_required  # new import line
 from schemas import Password
 from fastapi.middleware.cors import CORSMiddleware
 
 
-
-
 app = FastAPI()
-
 
 # Replace 'your-app-domain.com' with the domain of your Flutter web application,
 # or use '*' to allow all origins (not recommended in production)
@@ -59,7 +56,6 @@ def test_db(current_user: schemas.User = Depends(get_current_user), db: Session 
 #endponit que sirve para crear usuarios con el rol por defecto de User y devuelve datos de la tabla usuario y el token y el token de refresco
 @app.post("/users", response_model=schemas.User)
 def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
-    # Check if user or email already exists
     db_user_by_name = crud.get_user_by_username(db, user.NombreUsuario)
     db_user_by_email = crud.get_user_by_email(db, user.CorreoElectronico)
     if db_user_by_name or db_user_by_email:
@@ -69,19 +65,18 @@ def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
 
     db_user = crud.create_user(db=db, user=user)
     user_roles = [role.to_dict()["NombreRol"] for role in db_user.user_roles]
-
-    # Create tokens
     data = {"sub": db_user.NombreUsuario, "user_id": db_user.UsuarioID}
+    
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
         data=data, expires_delta=access_token_expires, user_roles=user_roles
     )
-    refresh_token_expires = timedelta(days=7)  # Set this to whatever you want
-    refresh_token = create_access_token(
-        data=data, expires_delta=refresh_token_expires, user_roles=user_roles
+
+    refresh_token_expires = timedelta(days=7)
+    refresh_token = create_refresh_token(
+        data=data, expires_delta=refresh_token_expires
     )
     
-    # Store refresh token in user model
     db_user.RefreshToken = refresh_token
     db_user.RefreshTokenExpiry = datetime.utcnow() + refresh_token_expires
     db.commit()
@@ -92,8 +87,6 @@ def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
     db_user["refresh_token"] = refresh_token
     return db_user
 
-
-#endpoint que sirve para iniciar sesion con el username y el password y devuelve el token de acceso y el de refresco y el rol del usuario
 @app.post("/token", response_model=schemas.Token)
 def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
     user = crud.authenticate_user(db, form_data.username, form_data.password)
@@ -111,43 +104,47 @@ def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db:
         data=data, expires_delta=access_token_expires, user_roles=user_roles
     )
 
-    refresh_token_expires = timedelta(days=7)  # Set this to whatever you want
-    refresh_token = create_access_token(
-        data=data, expires_delta=refresh_token_expires, user_roles=user_roles
+    refresh_token_expires = timedelta(days=7)
+    refresh_token = create_refresh_token(
+        data=data, expires_delta=refresh_token_expires
     )
-
-    # Store refresh token in user model
+    
     user.RefreshToken = refresh_token
     user.RefreshTokenExpiry = datetime.utcnow() + refresh_token_expires
     db.commit()
 
-    return {"access_token": access_token, "refresh_token": refresh_token, "token_type": "bearer", "roles": user_roles} 
+    return {
+        "access_token": access_token, 
+        "refresh_token": refresh_token, 
+        "token_type": "bearer", 
+        "roles": user_roles
+    }
 
-#endpoint que sirve para renovar el token atraves del token de refresco y devuelve un nuevo token y el token de refresco
 @app.post("/refresh_token", response_model=schemas.Token)
 def refresh_token(token: schemas.RefreshToken, db: Session = Depends(get_db)):
-    refresh_token = token.refresh_token
-    user = crud.get_user_by_refresh_token(db, refresh_token)
-    if user is None or user.RefreshTokenExpiry < datetime.utcnow():
+    refresh_token_str = token.refresh_token
+    user_id = verify_refresh_token(refresh_token_str, db)
+    
+    user = crud.get_user_by_id(db, user_id)
+    if user is None:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid refresh token",
+            detail="User not found",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
+
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     user_roles = [role.to_dict()["NombreRol"] for role in user.user_roles]
     data = {"sub": user.NombreUsuario, "user_id": user.UsuarioID}
     access_token = create_access_token(
         data=data, expires_delta=access_token_expires, user_roles=user_roles
     )
-    
-    refresh_token_expires = timedelta(days=7)  # Set this to whatever you want
-    new_refresh_token = create_access_token(
-        data=data, expires_delta=refresh_token_expires, user_roles=user_roles
+
+    refresh_token_expires = timedelta(days=7)
+    new_refresh_token = create_refresh_token(
+        data=data, expires_delta=refresh_token_expires
     )
-    
-    # Store new refresh token in user model
+
     user.RefreshToken = new_refresh_token
     user.RefreshTokenExpiry = datetime.utcnow() + refresh_token_expires
     db.commit()
@@ -161,6 +158,28 @@ def refresh_token(token: schemas.RefreshToken, db: Session = Depends(get_db)):
 
 
 # Endpoint que devuelve los datos del usuario autenticado
+@app.get("/me", response_model=schemas.UserResponse)
+async def read_users_me(current_user: schemas.User = Depends(get_current_user)):
+    try:
+        user_roles_dict = [user_role.to_dict() for user_role in current_user.user_roles]  # Convertimos los roles a una lista de diccionarios
+        user_response = schemas.UserResponse(
+            UsuarioID = current_user.UsuarioID,
+            NombreUsuario = current_user.NombreUsuario,
+            CorreoElectronico = current_user.CorreoElectronico,
+            Idioma = current_user.Idioma,
+            ZonaHoraria = current_user.ZonaHoraria,
+            FechaCreacion = current_user.FechaCreacion,
+            FechaActualizacion = current_user.FechaActualizacion,
+            Token = current_user.Token,
+            PuntosLealtad = current_user.PuntosLealtad,
+            user_roles = user_roles_dict,  # Usamos la lista de diccionarios de roles que acabamos de crear
+            user_roles_names = current_user.user_roles_names
+        )
+        return user_response
+    except Exception as e:
+        print(f"An error occurred: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 #endpoint que sirve para cambiar la contrseña introduciendo la contraseña antigua
 @app.post("/change_password")
