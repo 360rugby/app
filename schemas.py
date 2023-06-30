@@ -77,3 +77,10 @@ class UserResponse(BaseModel):
 
     class Config:
         orm_mode = True
+
+#schemas para el correo
+class ResetRequest(BaseModel):
+    email: str
+
+class PasswordReset(BaseModel):
+    new_password: str

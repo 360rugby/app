@@ -1,18 +1,19 @@
 from datetime import datetime, timedelta
-from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi import Body, FastAPI, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import jwt, JWTError
 from sqlalchemy.orm import Session
+from schemas import ResetRequest,PasswordReset
 from dependencies import get_current_user
 from models import User
 from schemas import RefreshToken
 from security import ALGORITHM, SECRET_KEY
 from database import get_db  
-import schemas, crud  
+import schemas, crud , security
 from typing import List
 from fastapi.security import OAuth2PasswordRequestForm
 from datetime import timedelta
-from security import ACCESS_TOKEN_EXPIRE_MINUTES, create_access_token, create_refresh_token, verify_refresh_token
+from security import ACCESS_TOKEN_EXPIRE_MINUTES, create_access_token, create_refresh_token, verify_refresh_token, generate_unique_token
 from dependencies import get_current_role, admin_role_required, user_role_required, admin_or_user_role_required  # new import line
 from schemas import Password
 from fastapi.middleware.cors import CORSMiddleware
@@ -199,3 +200,35 @@ def logout(current_user: schemas.User = Depends(get_current_user)):
     then UI can delete the token from the local storage.
     """
     return {"detail": "Successfully logged out"}
+
+#endpoint para enviar la url de restablecimiento de contraseña por correo
+@app.post("/password_reset_request")
+def password_reset_request(request: ResetRequest, db: Session = Depends(get_db)):
+    email = request.email
+    user = crud.get_user_by_email(db, email)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    reset_token = generate_unique_token() 
+    user.ResetToken = reset_token
+    user.ResetTokenExpiry = datetime.now() + timedelta(hours=24) 
+    db.commit()
+
+    crud.send_reset_email(email, reset_token)
+
+    return {"detail": "Password reset email sent"}
+#endpoint para cambiar la contraseña atraves de la url que se envio por correo
+@app.post("/password_reset/{reset_token}")
+def reset_password(reset_token: str, password_reset: PasswordReset, db: Session = Depends(get_db)):
+    user = crud.get_user_by_reset_token(db, reset_token)
+    if not user or user.ResetTokenExpiry < datetime.now():
+        raise HTTPException(status_code=404, detail="Invalid or expired token")
+
+    user.Contrasena = crud.get_password_hash(password_reset.new_password)
+    user.ResetToken = None
+    user.ResetTokenExpiry = None
+    db.commit()
+
+    return {"detail": "Password reset successful"}
+
+# ... tus otros endpoints aquí ...

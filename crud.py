@@ -1,8 +1,16 @@
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+import smtplib
 from fastapi import HTTPException
 from sqlalchemy.orm import Session, joinedload
-from datetime import datetime
+from datetime import datetime, timedelta
 import models, schemas, security
 from security import get_password_hash
+import os
+from dotenv import load_dotenv
+import secrets
+
+
 
 def get_users(db: Session):
     users = db.query(models.User).options(joinedload(models.User.user_roles)).all()
@@ -75,4 +83,24 @@ def get_user_by_email(db: Session, email: str):
 def get_user_by_mobile(db: Session, mobile: str):
     return db.query(models.User).filter(models.User.Movil == mobile).first()
 
+# Carga las variables de entorno
+load_dotenv()
 
+#funciones para el correo
+
+def get_user_by_reset_token(db: Session, reset_token: str):
+    return db.query(models.User).filter(models.User.ResetToken == reset_token).first()
+
+def send_reset_email(email: str, reset_token: str):
+    smtp_server = smtplib.SMTP_SSL(os.getenv("SMTP_SERVER"), os.getenv("SMTP_PORT"))
+    smtp_server.login(os.getenv("SMTP_USER"), os.getenv("SMTP_PASSWORD"))
+
+    msg = MIMEMultipart()
+    msg['From'] = os.getenv("SMTP_USER")
+    msg['To'] = email
+    msg['Subject'] = 'Password Reset Request'
+    body = f'Click on the following link to reset your password: http://localhost:8000/password_reset/{reset_token}'  # Reemplaza con el enlace correcto a tu página de restablecimiento de contraseña
+    msg.attach(MIMEText(body, 'plain'))
+
+    smtp_server.send_message(msg)
+    smtp_server.quit()

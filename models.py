@@ -20,6 +20,8 @@ class User(Base):
     PuntosLealtad = Column(Integer, default=0)
     RefreshToken = Column(String(255))
     RefreshTokenExpiry = Column(DateTime)
+    ResetToken = Column(String(255))
+    ResetTokenExpiry = Column(DateTime)
 
     user_roles = relationship("UserRoles", back_populates="user")
     user_roles_names = []  # Nuevo campo

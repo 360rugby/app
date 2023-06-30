@@ -67,3 +67,5 @@ def verify_refresh_token(refresh_token: str, db: Session):
         )
 
 
+def generate_unique_token():
+    return secrets.token_urlsafe(32)
