@@ -16,7 +16,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from datetime import timedelta
 from security import ACCESS_TOKEN_EXPIRE_MINUTES, create_access_token, create_refresh_token, verify_refresh_token, generate_unique_token
 from dependencies import get_current_role, admin_role_required, user_role_required, admin_or_user_role_required  # new import line
-from schemas import Password
+from schemas import Password, DeviceToken
 from fastapi.middleware.cors import CORSMiddleware
 import models
 from sqlalchemy.exc import IntegrityError
@@ -26,6 +26,8 @@ from stripe.error import StripeError
 import stripe
 from dotenv import load_dotenv
 import os
+from crud import send_fcm_notification
+
 
 stripe_webhook_secret = stripe_webhook_secret = os.getenv('STRIPE_WEBHOOK_SECRET')
 
@@ -519,9 +521,29 @@ def create_mantenimiento(mantenimiento: schemas.MantenimientoCreate, db: Session
     db.add(db_mantenimiento)
     db.commit()
     db.refresh(db_mantenimiento)
+
+    # Aquí, busca el usuario y el espacio en la base de datos
+    usuario = db.query(models.User).get(mantenimiento.UsuarioID)
+    espacio = db.query(models.Espacios).get(mantenimiento.EspacioID)
+
+    # Crea la notificación en la base de datos
+    notificacion = models.Notificaciones(
+        UsuarioID=mantenimiento.UsuarioID, 
+        TipoNotificacion="Mantenimiento Creado", 
+        ContenidoNotificacion=f"Acabas de crear un mantenimiento en la sala {espacio.NombreEspacio}"
+    )
+    db.add(notificacion)
+    db.commit()
+
+    if usuario and espacio:
+        device_token = usuario.DeviceToken
+        # Enviar la notificación a través de FCM
+        try:
+            response = send_fcm_notification(device_token, "Mantenimiento creado", f"Acabas de crear un mantenimiento en la sala {espacio.NombreEspacio}")
+        except Exception as e:
+            print(f"Error al enviar la notificación: {e}")
+
     return db_mantenimiento
-
-
 
 
 @app.get("/mantenimientos/{mantenimiento_id}", response_model=schemas.Mantenimiento)
@@ -582,8 +604,29 @@ def update_mantenimiento(mantenimiento_id: int, mantenimiento: schemas.Mantenimi
         setattr(db_mantenimiento, key, value)
 
     db.commit()
-    return db_mantenimiento
 
+    # Aquí, busca el usuario y el espacio en la base de datos
+    usuario = db.query(models.User).get(mantenimiento.UsuarioID)
+    espacio = db.query(models.Espacios).get(mantenimiento.EspacioID)
+
+    # Crea la notificación en la base de datos
+    notificacion = models.Notificaciones(
+        UsuarioID=mantenimiento.UsuarioID, 
+        TipoNotificacion="Mantenimiento Actualizado", 
+        ContenidoNotificacion=f"Has actualizado un mantenimiento en la sala {espacio.NombreEspacio}"
+    )
+    db.add(notificacion)
+    db.commit()
+
+    if usuario and espacio:
+        device_token = usuario.DeviceToken
+        # Enviar la notificación a través de FCM
+        try:
+            response = send_fcm_notification(device_token, "Mantenimiento actualizado", f"Has actualizado un mantenimiento en la sala {espacio.NombreEspacio}")
+        except Exception as e:
+            print(f"Error al enviar la notificación: {e}")
+
+    return db_mantenimiento
 
 
 @app.delete("/mantenimientos/{mantenimiento_id}", response_model=dict)
@@ -595,6 +638,8 @@ def delete_mantenimiento(mantenimiento_id: int, db: Session = Depends(get_db)):
     db.delete(db_mantenimiento)
     db.commit()
     return {"message": "Mantenimiento borrado correctamente"}
+
+
 
 #para hacer reservas para horas dias y semanas
 @app.post("/reservas", response_model=List[Reserva])
@@ -705,20 +750,21 @@ async def create_reserva(reserva: ReservaCreate, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail=error_messages)
 
     # Now that all dates have been verified, create the factura
+    # Ahora que todas las fechas han sido verificadas, crear la factura
     factura = models.Facturas(UsuarioID=reserva.UsuarioID, FechaFactura=now.date(), MontoFactura=total_cost, EstadoFactura="Pendiente")
     db.add(factura)
     db.commit()
     db.refresh(factura)
 
-    # And add the reservations to the database
+    # Y añade las reservas a la base de datos
     for reserva_to_add, bloqueada_to_add in zip(db_reservas_to_add, bloqueadas_to_add):
-            # Update reserva_to_add with the factura's ID
+            # Actualiza reserva_to_add con el ID de la factura
         reserva_to_add.FacturaID = factura.FacturaID
         db.add(reserva_to_add)
         db.commit()
         db.refresh(reserva_to_add)
 
-        # Include additional details in the response
+        # Incluye detalles adicionales en la respuesta
         espacio = db.query(models.Espacios).filter(models.Espacios.EspacioID == reserva_to_add.EspacioID).first()
         reserva_dict = reserva_to_add.to_dict_deep()
         reserva_dict.update({
@@ -732,7 +778,23 @@ async def create_reserva(reserva: ReservaCreate, db: Session = Depends(get_db)):
         db.add(bloqueada_to_add)
         db.commit()
 
-    # Return the list of reservations
+    # Crear la notificación en la base de datos
+    notificacion = models.Notificaciones(
+        UsuarioID=reserva.UsuarioID, 
+        TipoNotificacion="Reserva Creada", 
+        ContenidoNotificacion="Tienes una reserva pendiente de pago"
+    )
+    db.add(notificacion)
+    db.commit()
+
+    # Obtener el token del dispositivo del usuario
+    usuario = db.query(models.User).get(reserva.UsuarioID)
+    device_token = usuario.DeviceToken
+
+    # Enviar la notificación a través de FCM
+    response = send_fcm_notification(device_token, "Reserva Creada", "Tienes una reserva pendiente de pago")
+
+    # Retorna la lista de reservas
     return db_reservas
 
 
@@ -843,7 +905,23 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
         factura.EstadoFactura = "Pagada"
         db.commit()
 
+        # Obtén la reserva asociada a esta factura
+        reserva = db.query(models.Reservas).filter(models.Reservas.FacturaID == factura_id).first()
+        if not reserva:
+            raise HTTPException(status_code=404, detail="Reserva no encontrada")
+
+        # Obtén el espacio asociado a esta reserva
+        espacio = db.query(models.Espacios).filter(models.Espacios.EspacioID == reserva.EspacioID).first()
+        if not espacio:
+            raise HTTPException(status_code=404, detail="Espacio no encontrado")
+
+        # Envía la notificación de que la factura ha sido pagada
+        usuario = db.query(User).get(factura.UsuarioID)
+        device_token = usuario.DeviceToken
+        response = send_fcm_notification(device_token, "Reserva Pagada", f"Acabas de pagar por una reserva en la sala {espacio.NombreEspacio}")
+
     return {"status": "success"}
+
 
 @app.post("/devoluciones/{factura_id}")
 async def create_refund(factura_id: int, db: Session = Depends(get_db)):
@@ -882,3 +960,16 @@ async def create_refund(factura_id: int, db: Session = Depends(get_db)):
 
     # Devuelve el ID del reembolso
     return {"refund_id": refund.id}
+
+
+#endpoint que recibe el token de dispositivo atraves del id del usuario
+@app.post("/save-device-token")
+async def save_device_token(device_token: DeviceToken, db: Session = Depends(get_db)):
+    usuario = db.query(User).get(device_token.usuario_id)
+    
+    if not usuario:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    
+    usuario.DeviceToken = device_token.device_token
+    db.commit()
+    return {"message": "Token de dispositivo guardado correctamente."}

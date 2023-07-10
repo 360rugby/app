@@ -9,6 +9,9 @@ from security import get_password_hash
 import os
 from dotenv import load_dotenv
 import secrets
+import requests
+import json
+
 
 
 
@@ -104,3 +107,24 @@ def send_reset_email(email: str, reset_token: str):
 
     smtp_server.send_message(msg)
     smtp_server.quit()
+
+def send_fcm_notification(device_token, title, message):
+    headers = {
+        'Authorization': 'key=<Your Server Key>',  # reemplaza con tu server key
+        'Content-Type': 'application/json',
+    }
+    data = {
+        'to': device_token,
+        'notification': {
+            'title': title,
+            'body': message,
+            'sound': 'default',
+            'click_action': 'FLUTTER_NOTIFICATION_CLICK',
+        },
+    }
+    response = requests.post(
+        'https://fcm.googleapis.com/fcm/send',
+        headers=headers,
+        data=json.dumps(data)
+    )
+    return response

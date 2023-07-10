@@ -155,6 +155,7 @@ class ReservaBloqueada(ReservaBloqueadaCreate):
 
 class MantenimientoCreate(BaseModel):
     EspacioID: int
+    UsuarioID: int
     HoraInicio: datetime
     HoraFin: datetime
 
@@ -192,3 +193,7 @@ class Factura(BaseModel):
 
     class Config:
         orm_mode = True
+
+class DeviceToken(BaseModel):
+    usuario_id: int
+    device_token: str

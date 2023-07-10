@@ -25,6 +25,7 @@ class User(Base):
     RefreshTokenExpiry = Column(DateTime)
     ResetToken = Column(String(255))
     ResetTokenExpiry = Column(DateTime)
+    DeviceToken = Column(String(255))
     user_roles_names = []  # Nuevo campo
 
     # Relationships
@@ -34,6 +35,7 @@ class User(Base):
     opiniones = relationship("Opiniones", back_populates="usuario")
     reservas = relationship("Reservas", back_populates="usuario")
     reservas_bloqueadas = relationship("ReservasBloqueadas", back_populates="usuario")
+    mantenimiento = relationship("Mantenimiento", back_populates="usuario")
 
     user_roles = relationship("UserRoles", back_populates="user")
 
@@ -52,7 +54,8 @@ class User(Base):
             "RefreshTokenExpiry":self.RefreshTokenExpiry,
             "PuntosLealtad": self.PuntosLealtad,
             "user_roles": [role.to_dict() for role in self.user_roles],
-            "user_roles_names": self.user_roles_names,  # Incluimos el nuevo campo aquí
+            "user_roles_names": self.user_roles_names,
+            "DeviceToken": self.DeviceToken  # Incluimos el nuevo campo aquí
         }
         if deep:
             data['reservas'] = [reserva.to_dict() for reserva in self.reservas]  # Changed this line
@@ -183,9 +186,11 @@ class Mantenimiento(Base):
     
     MantenimientoID = Column(Integer, primary_key=True)
     EspacioID = Column(Integer, ForeignKey('espacios.EspacioID'), nullable=False)
+    UsuarioID = Column(Integer, ForeignKey('usuarios.UsuarioID'), nullable=False)
     HoraInicio = Column(DateTime, nullable=False)
     HoraFin = Column(DateTime, nullable=False)
     espacio = relationship("Espacios")  # new line
+    usuario = relationship("User", back_populates="mantenimiento")
 
 class Notificaciones(Base):
     __tablename__ = 'notificaciones'
@@ -209,14 +214,6 @@ class Opiniones(Base):
     usuario = relationship("User", back_populates="opiniones")
     espacio = relationship("Espacios", back_populates="opiniones")  # new line
 
-class ReglasEspacios(Base):
-    __tablename__ = 'reglasespacios'
-    
-    ReglaID = Column(Integer, primary_key=True)
-    EspacioID = Column(Integer, ForeignKey('espacios.EspacioID'), nullable=False)
-    TipoRegla = Column(String(50))
-    ValorRegla = Column(String(50))
-    espacio = relationship("Espacios")  # new line
 
 class Reservas(Base):
     __tablename__ = 'reservas'
