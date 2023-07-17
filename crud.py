@@ -3,7 +3,7 @@ from email.mime.text import MIMEText
 import smtplib
 from fastapi import HTTPException
 from sqlalchemy.orm import Session, joinedload
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 import models, schemas, security
 from security import get_password_hash
 import os
@@ -128,3 +128,32 @@ def send_fcm_notification(device_token, title, message):
         data=json.dumps(data)
     )
     return response
+
+def get_usuario(db: Session, usuario_id: int):
+    return db.query(models.User).filter(models.User.UsuarioID == usuario_id).first()
+
+def get_espacio(db: Session, espacio_id: int):
+    return db.query(models.Espacios).filter(models.Espacios.EspacioID == espacio_id).first()
+
+def get_descuento_by_details(db: Session, usuario_id: int, espacio_id: int, fecha_inicio: datetime, fecha_fin: datetime):
+    return db.query(models.Descuentos).filter(
+        models.Descuentos.UsuarioID == usuario_id,
+        models.Descuentos.EspacioID == espacio_id,
+        models.Descuentos.FechaInicioDescuento <= fecha_fin,  # starts before the new one ends
+        models.Descuentos.FechaFinDescuento >= fecha_inicio,  # ends after the new one starts
+    ).first()
+
+def create_descuento(db: Session, descuento: schemas.DescuentoCreate):
+    db_descuento = models.Descuentos(**descuento.dict())
+    db.add(db_descuento)
+    db.commit()
+    db.refresh(db_descuento)
+
+    reservas_afectadas = db.query(models.Reservas).filter(
+        models.Reservas.EspacioID == descuento.EspacioID,
+        models.Reservas.FechaInicio <= descuento.FechaFinDescuento,
+        models.Reservas.FechaFin >= descuento.FechaInicioDescuento
+    ).all()
+
+    return db_descuento, reservas_afectadas
+

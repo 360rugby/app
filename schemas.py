@@ -1,5 +1,5 @@
 from typing import Optional, List, Dict
-from pydantic import BaseModel, constr
+from pydantic import BaseModel, constr, Field
 from datetime import date, datetime, time
 import re
 
@@ -183,6 +183,8 @@ class ReservaCreate(BaseModel):
 class Reserva(ReservaCreate):
     ReservaID: int
 
+class ReservaCualquiera (ReservaCreate):
+    pass  # No need for ReservaID anymore
 
 class Factura(BaseModel):
     FacturaID: int
@@ -197,3 +199,21 @@ class Factura(BaseModel):
 class DeviceToken(BaseModel):
     usuario_id: int
     device_token: str
+
+class DescuentoBase(BaseModel):
+    UsuarioID: int = Field(..., gt=0)
+    EspacioID: int = Field(..., gt=0)
+    ValorDescuento: int = Field(..., ge=0, le=100)
+    FechaInicioDescuento: datetime
+    FechaFinDescuento: Optional[datetime] = None
+
+
+class DescuentoCreate(DescuentoBase):
+    pass
+
+
+class Descuento(DescuentoBase):
+    DescuentoID: int
+
+    class Config:
+        orm_mode = True

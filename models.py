@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Enum, DateTime, ForeignKey, Date, Time
+from sqlalchemy import Column, Float, Integer, String, Enum, DateTime, ForeignKey, Date, Time
 from sqlalchemy.orm import relationship, class_mapper, ColumnProperty
 from sqlalchemy.sql import func
 from sqlalchemy.ext.declarative import declarative_base
@@ -107,11 +107,13 @@ class Descuentos(Base):
     
     DescuentoID = Column(Integer, primary_key=True)
     UsuarioID = Column(Integer, ForeignKey('usuarios.UsuarioID'), nullable=False)
+    EspacioID = Column(Integer, ForeignKey('espacios.EspacioID'), nullable=False)
     ValorDescuento = Column(Integer, nullable=False)
-    FechaInicioDescuento = Column(Date, nullable=False)
-    FechaFinDescuento = Column(Date)
+    FechaInicioDescuento = Column(DateTime, nullable=False)
+    FechaFinDescuento = Column(DateTime, nullable=False)
     # Relaciones
     usuario = relationship("User", back_populates="descuentos")
+    espacio = relationship("Espacios", back_populates="descuentos")
 
 class Ubicaciones(Base):
     __tablename__ = 'ubicaciones'
@@ -138,6 +140,7 @@ class Espacios(Base):
     ubicacion = relationship("Ubicaciones", back_populates="espacios")  # new line
     reservas = relationship("Reservas", back_populates="espacio")  # new line
     opiniones = relationship("Opiniones", back_populates="espacio")  # new line
+    descuentos = relationship("Descuentos", back_populates="espacio") # changed from usuario to espacio
 
 
     def to_dict(self, deep=True):
@@ -158,7 +161,7 @@ class Facturas(Base):
     FacturaID = Column(Integer, primary_key=True)
     UsuarioID = Column(Integer, ForeignKey('usuarios.UsuarioID'), nullable=False)
     FechaFactura = Column(Date, nullable=False)
-    MontoFactura = Column(Integer, nullable=False)
+    MontoFactura = Column(Float, nullable=False)
     EstadoFactura = Column(String(50))
     PaymentIntentID = Column(String(255))
 

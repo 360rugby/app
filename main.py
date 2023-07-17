@@ -3,7 +3,7 @@ from fastapi import Body, FastAPI, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import jwt, JWTError
 from sqlalchemy.orm import Session
-from schemas import Reserva, ReservaCreate
+from schemas import Reserva, ReservaCreate,ReservaCualquiera
 from schemas import ResetRequest,PasswordReset
 from dependencies import get_current_user
 from models import User
@@ -21,12 +21,16 @@ from fastapi.middleware.cors import CORSMiddleware
 import models
 from sqlalchemy.exc import IntegrityError
 from fastapi.responses import JSONResponse
-from dateutil.relativedelta import relativedelta
 from stripe.error import StripeError
 import stripe
 from dotenv import load_dotenv
 import os
 from crud import send_fcm_notification
+from sqlalchemy import or_, and_
+from dateutil import relativedelta
+from dateutil.relativedelta import relativedelta
+
+
 
 
 stripe_webhook_secret = stripe_webhook_secret = os.getenv('STRIPE_WEBHOOK_SECRET')
@@ -639,19 +643,21 @@ def delete_mantenimiento(mantenimiento_id: int, db: Session = Depends(get_db)):
     db.commit()
     return {"message": "Mantenimiento borrado correctamente"}
 
-
-
-#para hacer reservas para horas dias y semanas
-@app.post("/reservas", response_model=List[Reserva])
+#reserva si o si, es decir ai ya hay una reserva en una sala de las que el usuario quiere reservar , busca un espacio que sea igiual par reservar en sistitucion de ese espacio
+@app.post("/reservaCualquiera", response_model=List[ReservaCualquiera])
 async def create_reserva(reserva: ReservaCreate, db: Session = Depends(get_db)):
-    now = datetime.combine(date.today(), datetime.now().time())  # DateTime object for current time
+    now = datetime.utcnow()  # DateTime object for current time
     db_reservas = []
     db_reservas_to_add = []  # Use this list to store reservations before adding to database
     bloqueadas_to_add = []  # List to store instances of ReservasBloqueadas
     overlapping_reservas_list = []  # Use this list to store overlapping reservation dates
     overlapping_mantenimientos_list = []  # Use this list to store overlapping maintenance dates
+    overlapping_customer_reservas_list = []  # Use this list to store overlapping reservation dates among the customer's reservations
+    customer_reservas_times = []  # Use this list to store all reservation intervals
     espacio = db.query(models.Espacios).filter(models.Espacios.EspacioID == reserva.EspacioID).first()
+    error_messages = {}
     total_cost = 0
+
     for reserva_individual in reserva.Reservas:
         # Create DateTime objects for reservation's start and end time
         HoraInicioBloqueo = datetime.combine(reserva_individual.FechaInicio, reserva_individual.HoraInicio)
@@ -666,33 +672,49 @@ async def create_reserva(reserva: ReservaCreate, db: Session = Depends(get_db)):
             raise HTTPException(status_code=400, detail="HoraFinBloqueo debe ser posterior a la hora actual")
 
         # Check if reservation end time is after start time (considering the case of crossing midnight)
-        if (HoraFinBloqueo < HoraInicioBloqueo and reserva_individual.FechaInicio == reserva_individual.FechaFin) or \
-            (HoraFinBloqueo == HoraInicioBloqueo and reserva_individual.FechaInicio == reserva_individual.FechaFin):
+        if HoraFinBloqueo < HoraInicioBloqueo:
             raise HTTPException(status_code=400, detail="HoraFinBloqueo debe ser posterior a HoraInicioBloqueo")
 
-        # Calculate cost for this reservation and determine the frequency
+        # Check if reservation times overlap with other reservations in the same request
+        for other_HoraInicio, other_HoraFin in customer_reservas_times:
+            if max(HoraInicioBloqueo, other_HoraInicio) < min(HoraFinBloqueo, other_HoraFin):  # This condition checks for overlap
+                overlapping_customer_reservas_list.append({"FechaInicio": str(reserva_individual.FechaInicio), "HoraInicio": str(reserva_individual.HoraInicio), "FechaFin": str(reserva_individual.FechaFin), "HoraFin": str(reserva_individual.HoraFin)})
 
-        duration = relativedelta(HoraFinBloqueo, HoraInicioBloqueo)
-        FrecuenciaReserva = None
-        cost = 0
+        customer_reservas_times.append((HoraInicioBloqueo, HoraFinBloqueo))
 
-        if duration.years > 0:
-            cost = duration.years * (espacio.PrecioPorMes * 12)
-            FrecuenciaReserva = 'Anual'
-        if duration.months > 0:
-            cost += duration.months * espacio.PrecioPorMes
-            FrecuenciaReserva = 'Mensual'
-        if duration.weeks > 0:
-            cost += (duration.weeks * 7) * espacio.PrecioPorDia
+        # Calculate total duration in years, months, days and hours
+        diff = relativedelta(HoraFinBloqueo, HoraInicioBloqueo)
+
+        total_years = diff.years
+        total_months = diff.months
+        total_days = diff.days
+        total_hours = (HoraFinBloqueo - HoraInicioBloqueo).seconds // 3600
+
+        # Determine frequency of reservation
+        FrecuenciaReserva = 'Una Vez'
+        if total_days < 7 and total_months == 0 and total_years == 0:
+            FrecuenciaReserva = 'Una Vez'
+        elif total_days >= 7 and total_days < 28 and total_months == 0 and total_years == 0:
             FrecuenciaReserva = 'Semanal'
-        if duration.days > 0:
-            cost += duration.days * espacio.PrecioPorDia
-            FrecuenciaReserva = 'Una Vez'
-        if duration.years == 0 and duration.months == 0 and duration.weeks == 0 and duration.days == 0:
-            duration_hours = (HoraFinBloqueo - HoraInicioBloqueo).seconds / 3600
-            cost = duration_hours * espacio.PrecioPorHora
-            FrecuenciaReserva = 'Una Vez'
+        elif total_days >= 28 and total_days < 365 and total_years == 0:
+            FrecuenciaReserva = 'Mensual'
+        elif total_years >= 1:
+            FrecuenciaReserva = 'Anual'
 
+        # Calculate cost
+        cost = 0
+        if total_years > 0 and espacio.PrecioPorMes is not None:
+            cost += total_years * 12 * espacio.PrecioPorMes
+        if total_months > 0 and espacio.PrecioPorMes is not None:
+            cost += total_months * espacio.PrecioPorMes
+        # For 28 days or more but less than a month, consider it as a month
+        if total_days >= 28 and espacio.PrecioPorMes is not None:
+            cost += espacio.PrecioPorMes
+        # For less than 28 days, calculate cost per day
+        elif total_days < 28 and espacio.PrecioPorDia is not None:
+            cost += total_days * espacio.PrecioPorDia
+        if total_hours > 0 and espacio.PrecioPorHora is not None:
+            cost += total_hours * espacio.PrecioPorHora
         total_cost += cost
 
         # Check if there is any existing reservation for the same space that overlaps with the new time slot
@@ -735,8 +757,15 @@ async def create_reserva(reserva: ReservaCreate, db: Session = Depends(get_db)):
             )
             bloqueadas_to_add.append(reserva_bloqueada)
 
-    # Create a dictionary to store error messages
-    error_messages = {}
+    # Check if there is any discount for the reservation period
+    descuento = db.query(models.Descuentos).filter(
+        models.Descuentos.EspacioID == reserva.EspacioID,
+        models.Descuentos.FechaInicioDescuento <= now,
+        models.Descuentos.FechaFinDescuento >= now
+    ).first()
+
+    if descuento is not None:
+        total_cost = total_cost - (total_cost * descuento.ValorDescuento / 100)
 
     # Add error messages for overlapping reservations and maintenances
     if overlapping_reservas_list:
@@ -745,26 +774,133 @@ async def create_reserva(reserva: ReservaCreate, db: Session = Depends(get_db)):
     if overlapping_mantenimientos_list:
         error_messages[f"Existe un mantenimiento para el espacio {espacio.NombreEspacio} en las fechas y horas seleccionadas"] = overlapping_mantenimientos_list
 
-    # If there were any error messages, raise an exception with all the details
-    if error_messages:
-        raise HTTPException(status_code=400, detail=error_messages)
+    if overlapping_customer_reservas_list:
+        error_messages[f"Las fechas que estás introduciendo se superponen entre sí"] = overlapping_customer_reservas_list
 
+    # If there were any error messages, find alternative spaces
+    if error_messages:
+        # Get the conflicting dates
+        conflicting_dates = []
+        for message, details in error_messages.items():
+            for detail in details:
+                conflicting_dates.append((detail["FechaInicio"], detail["HoraInicio"], detail["FechaFin"], detail["HoraFin"]))
+
+        # Find alternative spaces
+        for FechaInicio, HoraInicio, FechaFin, HoraFin in conflicting_dates:
+            # Convert strings to datetime objects
+            HoraInicioBloqueo = datetime.combine(datetime.strptime(FechaInicio, "%Y-%m-%d"), datetime.strptime(HoraInicio, "%H:%M:%S").time())
+            HoraFinBloqueo = datetime.combine(datetime.strptime(FechaFin, "%Y-%m-%d"), datetime.strptime(HoraFin, "%H:%M:%S").time())
+
+            # Find alternative spaces that are available at the same time, match the type of space and have a similar price
+            alternative_space = db.query(models.Espacios).filter(
+                models.Espacios.TipoEspacio == espacio.TipoEspacio,
+                models.Espacios.PrecioPorHora.between(espacio.PrecioPorHora * 0.9, espacio.PrecioPorHora * 1.1),
+                models.Espacios.PrecioPorDia.between(espacio.PrecioPorDia * 0.9, espacio.PrecioPorDia * 1.1),
+                models.Espacios.PrecioPorMes.between(espacio.PrecioPorMes * 0.9, espacio.PrecioPorMes * 1.1),
+                ~models.Espacios.EspacioID.in_(
+                    db.query(models.ReservasBloqueadas.EspacioID).filter(
+                        or_(
+                            and_(models.ReservasBloqueadas.HoraInicioBloqueo <= HoraInicioBloqueo, models.ReservasBloqueadas.HoraFinBloqueo > HoraInicioBloqueo),
+                            and_(models.ReservasBloqueadas.HoraInicioBloqueo < HoraFinBloqueo, models.ReservasBloqueadas.HoraFinBloqueo >= HoraFinBloqueo)
+                        )
+                    )
+                ),
+                ~models.Espacios.EspacioID.in_(
+                    db.query(models.Mantenimiento.EspacioID).filter(
+                        or_(
+                            and_(models.Mantenimiento.HoraInicio <= HoraInicioBloqueo, models.Mantenimiento.HoraFin > HoraInicioBloqueo),
+                            and_(models.Mantenimiento.HoraInicio < HoraFinBloqueo, models.Mantenimiento.HoraFin >= HoraFinBloqueo)
+                        )
+                    )
+                )
+            ).first()
+
+            # Loop until we find an alternative space that is not booked
+            while alternative_space is not None:
+                # Replace the original space with the alternative space
+                espacio = alternative_space
+
+                # Check if the alternative space is booked
+                overlapping_reservas = db.query(models.ReservasBloqueadas).filter(
+                    models.ReservasBloqueadas.EspacioID == espacio.EspacioID,
+                    models.ReservasBloqueadas.HoraInicioBloqueo < HoraFinBloqueo,
+                    models.ReservasBloqueadas.HoraFinBloqueo > HoraInicioBloqueo
+                ).first()
+
+                overlapping_mantenimientos = db.query(models.Mantenimiento).filter(
+                    models.Mantenimiento.EspacioID == espacio.EspacioID,
+                    models.Mantenimiento.HoraInicio < HoraFinBloqueo,
+                    models.Mantenimiento.HoraFin > HoraInicioBloqueo
+                ).first()
+
+                if overlapping_reservas is None and overlapping_mantenimientos is None:
+                    # The alternative space is not booked, so break the loop
+                    break
+
+                # The alternative space is booked, so get the next one
+                alternative_space = db.query(models.Espacios).filter(
+                    models.Espacios.TipoEspacio == espacio.TipoEspacio,
+                    models.Espacios.PrecioPorHora.between(espacio.PrecioPorHora * 0.9, espacio.PrecioPorHora * 1.1),
+                    models.Espacios.PrecioPorDia.between(espacio.PrecioPorDia * 0.9, espacio.PrecioPorDia * 1.1),
+                    models.Espacios.PrecioPorMes.between(espacio.PrecioPorMes * 0.9, espacio.PrecioPorMes * 1.1),
+                    models.Espacios.EspacioID > espacio.EspacioID,  # Add this condition to get the next space
+                    ~models.Espacios.EspacioID.in_(
+                        db.query(models.ReservasBloqueadas.EspacioID).filter(
+                            or_(
+                                and_(models.ReservasBloqueadas.HoraInicioBloqueo <= HoraInicioBloqueo, models.ReservasBloqueadas.HoraFinBloqueo > HoraInicioBloqueo),
+                                and_(models.ReservasBloqueadas.HoraInicioBloqueo < HoraFinBloqueo, models.ReservasBloqueadas.HoraFinBloqueo >= HoraFinBloqueo)
+                            )
+                        )
+                    ),
+                    ~models.Espacios.EspacioID.in_(
+                        db.query(models.Mantenimiento.EspacioID).filter(
+                            or_(
+                                and_(models.Mantenimiento.HoraInicio <= HoraInicioBloqueo, models.Mantenimiento.HoraFin > HoraInicioBloqueo),
+                                and_(models.Mantenimiento.HoraInicio < HoraFinBloqueo, models.Mantenimiento.HoraFin >= HoraFinBloqueo)
+                            )
+                        )
+                    )
+                ).first()
+
+            # If we didn't find any available alternative space, raise an error
+            if alternative_space is None:
+                raise HTTPException(status_code=400, detail="No se pudo encontrar un espacio alternativo disponible")
+
+            # Now proceed with the reservation as usual
+            reserva_individual_dict = reserva_individual.dict()
+            reserva_individual_dict.update({
+                'UsuarioID': reserva.UsuarioID,
+                'EspacioID': alternative_space.EspacioID,
+                'FrecuenciaReserva': FrecuenciaReserva,
+                'EstadoReserva': reserva.EstadoReserva
+            })
+
+            db_reserva_individual = models.Reservas(**reserva_individual_dict)
+            db_reservas_to_add.append(db_reserva_individual)
+
+            # Create instance in ReservasBloqueadas table
+            reserva_bloqueada = models.ReservasBloqueadas(
+                UsuarioID=reserva.UsuarioID,
+                EspacioID=alternative_space.EspacioID,
+                HoraInicioBloqueo=HoraInicioBloqueo,
+                HoraFinBloqueo=HoraFinBloqueo
+            )
+            bloqueadas_to_add.append(reserva_bloqueada)
     # Now that all dates have been verified, create the factura
-    # Ahora que todas las fechas han sido verificadas, crear la factura
     factura = models.Facturas(UsuarioID=reserva.UsuarioID, FechaFactura=now.date(), MontoFactura=total_cost, EstadoFactura="Pendiente")
     db.add(factura)
     db.commit()
     db.refresh(factura)
 
-    # Y añade las reservas a la base de datos
+    # Add reservations to the database
     for reserva_to_add, bloqueada_to_add in zip(db_reservas_to_add, bloqueadas_to_add):
-            # Actualiza reserva_to_add con el ID de la factura
+        # Update reserva_to_add with the invoice ID
         reserva_to_add.FacturaID = factura.FacturaID
         db.add(reserva_to_add)
         db.commit()
         db.refresh(reserva_to_add)
 
-        # Incluye detalles adicionales en la respuesta
+        # Include additional details in the response
         espacio = db.query(models.Espacios).filter(models.Espacios.EspacioID == reserva_to_add.EspacioID).first()
         reserva_dict = reserva_to_add.to_dict_deep()
         reserva_dict.update({
@@ -778,7 +914,7 @@ async def create_reserva(reserva: ReservaCreate, db: Session = Depends(get_db)):
         db.add(bloqueada_to_add)
         db.commit()
 
-    # Crear la notificación en la base de datos
+    # Create the notification in the database
     notificacion = models.Notificaciones(
         UsuarioID=reserva.UsuarioID, 
         TipoNotificacion="Reserva Creada", 
@@ -787,15 +923,207 @@ async def create_reserva(reserva: ReservaCreate, db: Session = Depends(get_db)):
     db.add(notificacion)
     db.commit()
 
-    # Obtener el token del dispositivo del usuario
+    # Get the user's device token
     usuario = db.query(models.User).get(reserva.UsuarioID)
     device_token = usuario.DeviceToken
 
-    # Enviar la notificación a través de FCM
+    # Send the notification through FCM
     response = send_fcm_notification(device_token, "Reserva Creada", "Tienes una reserva pendiente de pago")
 
-    # Retorna la lista de reservas
+    # Return the list of reservations
     return db_reservas
+
+
+
+
+#para hacer reservas para horas dias y semanas
+
+
+@app.post("/reservas", response_model=List[Reserva])
+async def create_reserva(reserva: ReservaCreate, db: Session = Depends(get_db)):
+    now = datetime.utcnow()  # DateTime object for current time
+    db_reservas = []
+    db_reservas_to_add = []  # Use this list to store reservations before adding to database
+    bloqueadas_to_add = []  # List to store instances of ReservasBloqueadas
+    overlapping_reservas_list = []  # Use this list to store overlapping reservation dates
+    overlapping_mantenimientos_list = []  # Use this list to store overlapping maintenance dates
+    overlapping_customer_reservas_list = []  # Use this list to store overlapping reservation dates among the customer's reservations
+    customer_reservas_times = []  # Use this list to store all reservation intervals
+    espacio = db.query(models.Espacios).filter(models.Espacios.EspacioID == reserva.EspacioID).first()
+    error_messages = {}
+    total_cost = 0
+
+    for reserva_individual in reserva.Reservas:
+        # Create DateTime objects for reservation's start and end time
+        HoraInicioBloqueo = datetime.combine(reserva_individual.FechaInicio, reserva_individual.HoraInicio)
+        HoraFinBloqueo = datetime.combine(reserva_individual.FechaFin, reserva_individual.HoraFin)
+
+        # Check if reservation start time is after current time
+        if HoraInicioBloqueo <= now:
+            raise HTTPException(status_code=400, detail="HoraInicioBloqueo debe ser posterior a la hora actual")
+
+        # Check if reservation end time is after current time
+        if HoraFinBloqueo <= now:
+            raise HTTPException(status_code=400, detail="HoraFinBloqueo debe ser posterior a la hora actual")
+
+        # Check if reservation end time is after start time (considering the case of crossing midnight)
+        if HoraFinBloqueo < HoraInicioBloqueo:
+            raise HTTPException(status_code=400, detail="HoraFinBloqueo debe ser posterior a HoraInicioBloqueo")
+
+        # Check if reservation times overlap with other reservations in the same request
+        for other_HoraInicio, other_HoraFin in customer_reservas_times:
+            if max(HoraInicioBloqueo, other_HoraInicio) < min(HoraFinBloqueo, other_HoraFin):  # This condition checks for overlap
+                overlapping_customer_reservas_list.append({"FechaInicio": str(reserva_individual.FechaInicio), "HoraInicio": str(reserva_individual.HoraInicio), "FechaFin": str(reserva_individual.FechaFin), "HoraFin": str(reserva_individual.HoraFin)})
+
+        customer_reservas_times.append((HoraInicioBloqueo, HoraFinBloqueo))
+
+        # Calculate total duration in years, months, days and hours
+        diff = relativedelta(HoraFinBloqueo, HoraInicioBloqueo)
+
+        total_years = diff.years
+        total_months = diff.months
+        total_days = diff.days
+        total_hours = (HoraFinBloqueo - HoraInicioBloqueo).seconds // 3600
+
+        # Determine frequency of reservation
+        FrecuenciaReserva = 'Una Vez'
+        if total_days < 7 and total_months == 0 and total_years == 0:
+            FrecuenciaReserva = 'Una Vez'
+        elif total_days >= 7 and total_days < 28 and total_months == 0 and total_years == 0:
+            FrecuenciaReserva = 'Semanal'
+        elif total_days >= 28 and total_days < 365 and total_years == 0:
+            FrecuenciaReserva = 'Mensual'
+        elif total_years >= 1:
+            FrecuenciaReserva = 'Anual'
+
+        # Calculate cost
+        cost = 0
+        if total_years > 0 and espacio.PrecioPorMes is not None:
+            cost += total_years * 12 * espacio.PrecioPorMes
+        if total_months > 0 and espacio.PrecioPorMes is not None:
+            cost += total_months * espacio.PrecioPorMes
+        # For 28 days or more but less than a month, consider it as a month
+        if total_days >= 28 and espacio.PrecioPorMes is not None:
+            cost += espacio.PrecioPorMes
+        # For less than 28 days, calculate cost per day
+        elif total_days < 28 and espacio.PrecioPorDia is not None:
+            cost += total_days * espacio.PrecioPorDia
+        if total_hours > 0 and espacio.PrecioPorHora is not None:
+            cost += total_hours * espacio.PrecioPorHora
+        total_cost += cost
+
+        # Check if there is any existing reservation for the same space that overlaps with the new time slot
+        overlapping_reservas = db.query(models.ReservasBloqueadas).filter(
+            models.ReservasBloqueadas.EspacioID == reserva.EspacioID,
+            models.ReservasBloqueadas.HoraInicioBloqueo < HoraFinBloqueo,
+            models.ReservasBloqueadas.HoraFinBloqueo > HoraInicioBloqueo
+        ).first()
+
+        if overlapping_reservas is not None:
+            overlapping_reservas_list.append({"FechaInicio": str(reserva_individual.FechaInicio), "HoraInicio": str(reserva_individual.HoraInicio), "FechaFin": str(reserva_individual.FechaFin), "HoraFin": str(reserva_individual.HoraFin)})
+
+        overlapping_mantenimientos = db.query(models.Mantenimiento).filter(
+            models.Mantenimiento.EspacioID == reserva.EspacioID,
+            models.Mantenimiento.HoraInicio < HoraFinBloqueo,
+            models.Mantenimiento.HoraFin > HoraInicioBloqueo
+        ).first()
+
+        if overlapping_mantenimientos is not None:
+            overlapping_mantenimientos_list.append({"FechaInicio": str(reserva_individual.FechaInicio), "HoraInicio": str(reserva_individual.HoraInicio), "FechaFin": str(reserva_individual.FechaFin), "HoraFin": str(reserva_individual.HoraFin)})
+
+        if not overlapping_reservas and not overlapping_mantenimientos:
+            reserva_individual_dict = reserva_individual.dict()
+            reserva_individual_dict.update({
+                'UsuarioID': reserva.UsuarioID,
+                'EspacioID': reserva.EspacioID,
+                'FrecuenciaReserva': FrecuenciaReserva,
+                'EstadoReserva': reserva.EstadoReserva
+            })
+
+            db_reserva_individual = models.Reservas(**reserva_individual_dict)
+            db_reservas_to_add.append(db_reserva_individual)
+
+            # Create instance in ReservasBloqueadas table
+            reserva_bloqueada = models.ReservasBloqueadas(
+                UsuarioID=reserva.UsuarioID,
+                EspacioID=reserva.EspacioID,
+                HoraInicioBloqueo=HoraInicioBloqueo,
+                HoraFinBloqueo=HoraFinBloqueo
+            )
+            bloqueadas_to_add.append(reserva_bloqueada)
+
+    # Check if there is any discount for the reservation period
+    descuento = db.query(models.Descuentos).filter(
+        models.Descuentos.EspacioID == reserva.EspacioID,
+        models.Descuentos.FechaInicioDescuento <= now,
+        models.Descuentos.FechaFinDescuento >= now
+    ).first()
+
+    if descuento is not None:
+        total_cost = total_cost - (total_cost * descuento.ValorDescuento / 100)
+
+    # Add error messages for overlapping reservations and maintenances
+    if overlapping_reservas_list:
+        error_messages[f"Ya existe una reserva para el espacio {espacio.NombreEspacio} en las fechas y horas seleccionadas"] = overlapping_reservas_list
+
+    if overlapping_mantenimientos_list:
+        error_messages[f"Existe un mantenimiento para el espacio {espacio.NombreEspacio} en las fechas y horas seleccionadas"] = overlapping_mantenimientos_list
+
+    if overlapping_customer_reservas_list:
+        error_messages[f"Las fechas que estás introduciendo se superponen entre sí"] = overlapping_customer_reservas_list
+
+    # If there were any error messages, raise an exception with all the details
+    if error_messages:
+        raise HTTPException(status_code=400, detail=error_messages)
+
+    # Now that all dates have been verified, create the factura
+    factura = models.Facturas(UsuarioID=reserva.UsuarioID, FechaFactura=now.date(), MontoFactura=total_cost, EstadoFactura="Pendiente")
+    db.add(factura)
+    db.commit()
+    db.refresh(factura)
+
+    # Add reservations to the database
+    for reserva_to_add, bloqueada_to_add in zip(db_reservas_to_add, bloqueadas_to_add):
+        # Update reserva_to_add with the invoice ID
+        reserva_to_add.FacturaID = factura.FacturaID
+        db.add(reserva_to_add)
+        db.commit()
+        db.refresh(reserva_to_add)
+
+        # Include additional details in the response
+        espacio = db.query(models.Espacios).filter(models.Espacios.EspacioID == reserva_to_add.EspacioID).first()
+        reserva_dict = reserva_to_add.to_dict_deep()
+        reserva_dict.update({
+            'NombreEspacio': espacio.NombreEspacio,
+            'EspacioID': espacio.EspacioID,
+            'ReservaID': reserva_to_add.ReservaID,
+            'Reservas': reserva.Reservas
+        })
+
+        db_reservas.append(Reserva(**reserva_dict))
+        db.add(bloqueada_to_add)
+        db.commit()
+
+    # Create the notification in the database
+    notificacion = models.Notificaciones(
+        UsuarioID=reserva.UsuarioID, 
+        TipoNotificacion="Reserva Creada", 
+        ContenidoNotificacion="Tienes una reserva pendiente de pago"
+    )
+    db.add(notificacion)
+    db.commit()
+
+    # Get the user's device token
+    usuario = db.query(models.User).get(reserva.UsuarioID)
+    device_token = usuario.DeviceToken
+
+    # Send the notification through FCM
+    response = send_fcm_notification(device_token, "Reserva Creada", "Tienes una reserva pendiente de pago")
+
+    # Return the list of reservations
+    return db_reservas
+
+
 
 
 @app.get("/reservas", response_model=List[schemas.Reserva])
@@ -973,3 +1301,37 @@ async def save_device_token(device_token: DeviceToken, db: Session = Depends(get
     usuario.DeviceToken = device_token.device_token
     db.commit()
     return {"message": "Token de dispositivo guardado correctamente."}
+
+
+
+@app.post("/descuentos", response_model=schemas.Descuento)
+def create_descuento(descuento: schemas.DescuentoCreate, db: Session = Depends(get_db)):
+    db_usuario = crud.get_usuario(db, descuento.UsuarioID)
+    if not db_usuario:
+        raise HTTPException(status_code=400, detail="UsuarioID does not exist.")
+
+    db_espacio = crud.get_espacio(db, descuento.EspacioID)
+    if not db_espacio:
+        raise HTTPException(status_code=400, detail="EspacioID does not exist.")
+
+    overlapping_discounts = db.query(models.Descuentos).filter(
+        models.Descuentos.EspacioID == descuento.EspacioID,
+        models.Descuentos.FechaInicioDescuento <= descuento.FechaFinDescuento,
+        models.Descuentos.FechaFinDescuento >= descuento.FechaInicioDescuento
+    ).first()
+
+    if overlapping_discounts:
+        raise HTTPException(status_code=400, detail="Ya existe un descuento para el espacio y el rango de fechas proporcionado.")
+
+    if descuento.FechaInicioDescuento > descuento.FechaFinDescuento:
+        raise HTTPException(status_code=400, detail="FechaInicioDescuento no puede ser mayor que FechaFinDescuento.")
+
+    if descuento.FechaInicioDescuento < datetime.now():
+        raise HTTPException(status_code=400, detail="FechaInicioDescuento no puede ser anterior a la fecha actual.")
+
+    db_descuento = models.Descuentos(**descuento.dict())
+    db.add(db_descuento)
+    db.commit()
+    db.refresh(db_descuento)
+    
+    return db_descuento
